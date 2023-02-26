@@ -14,5 +14,7 @@ chess.exe
 ```
 
 ## Linux
+```bash
 make -B
 ./chess
+```
