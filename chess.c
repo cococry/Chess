@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <glad/glad.h>
 #include <stb_image.h>
+#include <string.h>
 
 /* ============================ */
 /*           GLOBALS            */
@@ -14,7 +15,7 @@ bool8 window_open;
 
 typedef struct {
     bool8 white_turn;
-    vec2 selected_board_tile;
+    chess_piece selected_chess_piece;
 } game_state;
 
 static game_state s_game_state;
@@ -28,6 +29,17 @@ static chess_board board_data;
 
 #define BOARD_X_SIZE 8
 #define BOARD_Y_SIZE 8
+
+static bool8 selected_any_chess_piece() { 
+    return s_game_state.selected_chess_piece.board_pos.x != -1.0f && s_game_state.selected_chess_piece.board_pos.y != -1.0f;
+}
+static bool8 piece_is_playing_color(chess_piece piece) {
+    return ((s_game_state.white_turn && piece.is_white) ||
+                    (!s_game_state.white_turn && !piece.is_white));
+}
+static bool8 is_piece_on_board_pos(vec2 board_pos) {
+    return get_chess_piece_by_board_pos(board_pos).type != chess_piece_type_none;
+}
 
 /* ============================ */
 /*        SDL LIBRARY           */
@@ -89,7 +101,7 @@ void application_loop() {
     init_chess_board();
     chess_board_default_placement();
 
-    s_game_state.selected_board_tile = (vec2){-1.0f, -1.0f};
+    s_game_state.selected_chess_piece.board_pos = (vec2){-1.0f, -1.0f};
     s_game_state.white_turn = true;
 
     while (window_open) {
@@ -98,14 +110,14 @@ void application_loop() {
         render_chess_board_bg();
         render_chess_pieces_on_board();
         vec2 available_moves[32];
-        u32 available_moves_count;
-        if (s_game_state.selected_board_tile.x != -1.0f && s_game_state.selected_board_tile.y != -1.0f) {
-            render_quad_on_chess_board((vec4){0.2f, 0.3f, 0.8f, 0.4f}, s_game_state.selected_board_tile, 1.0f);
-            available_moves_count = get_available_moves_from_chess_piece(get_chess_piece_by_board_pos(s_game_state.selected_board_tile),
-                                                                         available_moves);
-            for (u32 i = 0; i < available_moves_count; i++) {
-                if ((s_game_state.white_turn && get_chess_piece_by_board_pos(s_game_state.selected_board_tile).is_white) ||
-                    (!s_game_state.white_turn && !get_chess_piece_by_board_pos(s_game_state.selected_board_tile).is_white)) {
+        memset(available_moves, -1.0f, sizeof(available_moves));
+        u32 available_moves_count = 0;
+        if (selected_any_chess_piece()) {
+            render_quad_on_chess_board((vec4){0.2f, 0.3f, 0.8f, 0.4f}, s_game_state.selected_chess_piece.board_pos, 1.0f);
+
+            available_moves_count = get_available_moves_from_chess_piece(s_game_state.selected_chess_piece, available_moves);
+            if (piece_is_playing_color(s_game_state.selected_chess_piece)){
+                for (u32 i = 0; i < available_moves_count; i++) {
                     render_quad_on_chess_board((vec4){0.2f, 0.8f, 0.3f, 1.0f}, available_moves[i], 0.5f);
                 }
             }
@@ -117,18 +129,15 @@ void application_loop() {
                 window_open = false;
             }
             if (ev.type == SDL_MOUSEBUTTONDOWN) {
-                if (ev.button.button = SDL_BUTTON_LEFT) {
+                if (ev.button.button == SDL_BUTTON_LEFT) {
                     i32 x, y;
-                    SDL_GetMouseState(&x, &y);
+                    SDL_GetMouseState(&x, &y);  
                     int x_grid = (int)(x / 100);
                     int y_grid = (int)(y / 100);
-
-                    if (get_chess_piece_by_board_pos((vec2){(float)x_grid, (float)y_grid}).type != chess_piece_type_none) {
-                        chess_piece selected_piece = get_chess_piece_by_board_pos((vec2){(float)x_grid, (float)y_grid});
-                        if ((s_game_state.white_turn && selected_piece.is_white) ||
-                            (!s_game_state.white_turn && !selected_piece.is_white)) {
-                            s_game_state.selected_board_tile = (vec2){(float)x_grid, (float)y_grid};
-                        }
+                    
+                    if (is_piece_on_board_pos((vec2){x_grid, y_grid}) && 
+                            piece_is_playing_color(get_chess_piece_by_board_pos((vec2){x_grid, y_grid}))) {
+                        s_game_state.selected_chess_piece = get_chess_piece_by_board_pos((vec2){x_grid, y_grid});
                     } else {
                         bool8 can_delesect = true;
                         for (u32 i = 0; i < available_moves_count; i++) {
@@ -138,38 +147,30 @@ void application_loop() {
                             }
                         }
                         if (can_delesect)
-                            s_game_state.selected_board_tile = (vec2){-1.0f, -1.0f};
+                            s_game_state.selected_chess_piece.board_pos = (vec2){-1.0f, -1.0f};
                     }
-
                     for (u32 i = 0; i < available_moves_count; i++) {
                         if (available_moves[i].x == x_grid && available_moves[i].y == y_grid) {
-                            if ((s_game_state.white_turn && get_chess_piece_by_board_pos(s_game_state.selected_board_tile).is_white) ||
-                                (!s_game_state.white_turn && !get_chess_piece_by_board_pos(s_game_state.selected_board_tile).is_white)) {
-                                if (get_chess_piece_by_board_pos(available_moves[i]).type != chess_piece_type_none) {
-                                    remove_chess_piece_from_board(available_moves[i]);
-                                }
+                            if (piece_is_playing_color(s_game_state.selected_chess_piece)) {
                                 s_game_state.white_turn = !s_game_state.white_turn;
-                                move_chess_piece_on_board(s_game_state.selected_board_tile, available_moves[i]);
-                                s_game_state.selected_board_tile = available_moves[i];
-                                if (get_chess_piece_by_board_pos(s_game_state.selected_board_tile).type == chess_piece_type_pawn) {
+                                vec2 selected_move = available_moves[i];
+                                if (is_piece_on_board_pos(selected_move)) {
+                                    remove_chess_piece_from_board(selected_move);
+                                }                                
+                                move_chess_piece_on_board(s_game_state.selected_chess_piece.board_pos, selected_move);
+                                s_game_state.selected_chess_piece.board_pos = selected_move;
+                                if (s_game_state.selected_chess_piece.type == chess_piece_type_pawn) {
                                     for (u32 i = 0; i < board_data.piece_count; i++) {
-                                        if (board_data.pieces[i].board_pos.x == s_game_state.selected_board_tile.x &&
-                                            board_data.pieces[i].board_pos.y == s_game_state.selected_board_tile.y) {
+                                        if (board_data.pieces[i].board_pos.x == s_game_state.selected_chess_piece.board_pos.x &&
+                                            board_data.pieces[i].board_pos.y == s_game_state.selected_chess_piece.board_pos.y) {
                                             board_data.pieces[i].pawn_moved = true;
                                         }
                                     }
                                 }
                             }
-                            s_game_state.selected_board_tile = (vec2){-1.0f, -1.0f};
+                            s_game_state.selected_chess_piece.board_pos = (vec2){-1.0f, -1.0f};
+                            break;
                         }
-                    }
-                }
-            }
-            if (ev.type == SDL_KEYDOWN) {
-                if (ev.key.keysym.sym == SDLK_w) {
-                    if (s_game_state.selected_board_tile.x != -1.0f && s_game_state.selected_board_tile.y != -1.0f) {
-                        remove_chess_piece_from_board(s_game_state.selected_board_tile);
-                        s_game_state.selected_board_tile = (vec2){-1.0f, -1.0f};
                     }
                 }
             }
@@ -538,6 +539,7 @@ chess_piece get_chess_piece_by_board_pos(vec2 board_pos) {
         .type = chess_piece_type_none};
     if (board_pos.x >= BOARD_X_SIZE || board_pos.y >= BOARD_Y_SIZE) return ret;
     for (u32 i = 0; i < board_data.piece_count; i++) {
+        if(board_data.pieces[i].type == chess_piece_type_none) continue;
         if (board_data.pieces[i].board_pos.x == board_pos.x && board_data.pieces[i].board_pos.y == board_pos.y) {
             return board_data.pieces[i];
         }
@@ -624,8 +626,11 @@ u32 get_available_moves_from_chess_piece(chess_piece piece, vec2* available_move
         }
     } else if (piece.type == chess_piece_type_rook) {
         if (piece.is_white) {
-            for (u32 y = piece.board_pos.y; y > 0; y--) {
+            for (u32 y = (BOARD_Y_SIZE - 1) - piece.board_pos.y + 1; y <= BOARD_Y_SIZE; y++) {
+                chess_piece current_piece = get_chess_piece_by_board_pos((vec2){piece.board_pos.x, piece.board_pos.y - y});
+                if(!is_chess_piece_move_possible((vec2){piece.board_pos.x, piece.board_pos.y - y}) && current_piece.is_white) break;
                 available_moves[moves_count++] = (vec2){piece.board_pos.x, piece.board_pos.y - y};
+                if(!is_chess_piece_move_possible((vec2){piece.board_pos.x, piece.board_pos.y - y}) && !current_piece.is_white) break;
             }
         }
     }
