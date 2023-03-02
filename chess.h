@@ -144,3 +144,9 @@ void render_quad_on_chess_board(vec4 color, vec2 board_pos, float scaling);
 u32 get_available_moves_from_chess_piece(chess_piece piece, vec2* available_moves);
 
 void remove_chess_piece_from_board(vec2 board_pos);
+
+bool8 is_king_in_check(bool8 white);
+
+bool8 is_king_in_check_after_move(vec2 src_move, vec2 dst_move, bool8 white);
+
+vec2 get_king_position(bool8 white);
